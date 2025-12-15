@@ -1,30 +1,28 @@
 # VPC
 resource "aws_vpc" "main" {
-    cidr_block            = "172.17.0.0/16"
-    enable_dns_hostnames  = true
-    enable_dns_support    = true
+  cidr_block            = "172.17.0.0/16"
+  enable_dns_hostnames  = true
+  enable_dns_support    = true
 
-    tags = { Name = "${local.prefix}" }
+  tags = { Name = "${local.prefix}" }
 }
 
 # Public subnet
 resource "aws_subnet" "public" {
-    vpc_id                  = aws_vpc.main.id
-    cidr_block              = "172.17.0.0/20"
-    map_public_ip_on_launch = true
-    availability_zone       = "ap-southeast-1a"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "172.17.1.0/24"
+  map_public_ip_on_launch = true
+  availability_zone       = "ap-southeast-1a"
 
-    tags = { Name = "${local.prefix}-public-subnet" }
+  tags = { Name = "${local.prefix}-public-subnet" }
 }
 
-# Internet Gateway
 resource "aws_internet_gateway" "igw" {
-    vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.main.id
 
-    tags   = { Name = "${local.prefix}-public-igw" }
+  tags   = { Name = "${local.prefix}-public-igw" }
 }
 
-# Route table for public subnet
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -41,36 +39,50 @@ resource "aws_route_table_association" "public_assoc" {
   route_table_id = aws_route_table.public.id
 }
 
-# Security group allowing ssh and http
-resource "aws_security_group" "public_sg" {
-  name        = "${local.prefix}-public-sg"
-  description = "Allow SSH and HTTP"
-  vpc_id      = aws_vpc.main.id
+resource "aws_eip" "nat" {
+  domain = "vpc"
 
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["${local.my_ip}"]
+  tags = {
+    Name = "${local.prefix}-nat-eip"
+  }
+}
+
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public.id
+
+  tags = {
+    Name = "${local.prefix}-nat-gateway"
   }
 
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# Private subnet
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "172.17.2.0/24"
+  availability_zone       = "ap-southeast-1a"
+
+  tags = { Name = "${local.prefix}-private-subnet" }
+}
+
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat.id
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  tags = {
+    Name = "${local.prefix}-private-rt"
   }
+}
 
-  tags = { Name = "${local.prefix}-public-sg" }
+resource "aws_route_table_association" "private_assoc" {
+  subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
 }
 
 # Key-pair
@@ -109,8 +121,39 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_role.name
 }
 
-# EC2 instance
-resource "aws_instance" "web" {
+# Public security group
+resource "aws_security_group" "public_sg" {
+  name        = "${local.prefix}-public-sg"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["${local.my_ip}"]
+  }
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${local.prefix}-public-sg" }
+}
+
+# Public EC2 instance
+resource "aws_instance" "public_ec2" {
   ami                         = local.ami
   instance_type               = "t2.small"
   subnet_id                   = aws_subnet.public.id
@@ -119,13 +162,54 @@ resource "aws_instance" "web" {
   key_name                    = aws_key_pair.my_key.key_name
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
 
-#   # Simple userdata to install nginx and serve a landing page
-#   user_data = <<-EOF
-#     #!/bin/bash
-#     yum update -y
-#     EOF
+  #   # Simple userdata to install nginx and serve a landing page
+  #   user_data = <<-EOF
+  #     #!/bin/bash
+  #     yum update -y
+  #     EOF
 
   tags = {
     Name = "${local.prefix}-public-ec2"
+  }
+}
+
+# Private security group
+resource "aws_security_group" "private_sg" {
+  name   = "${local.prefix}-ec2-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    description     = "SSH from bastion"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.public_sg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Private EC2 instance
+resource "aws_instance" "private_ec2" {
+  ami                         = local.ami
+  instance_type               = "t2.small"
+  subnet_id                   = aws_subnet.private.id
+  vpc_security_group_ids      = [aws_security_group.private_sg.id]
+  key_name                    = aws_key_pair.my_key.key_name
+  iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
+
+  #   # Simple userdata to install nginx and serve a landing page
+  #   user_data = <<-EOF
+  #     #!/bin/bash
+  #     yum update -y
+  #     EOF
+
+  tags = {
+    Name = "${local.prefix}-private-ec2"
   }
 }
