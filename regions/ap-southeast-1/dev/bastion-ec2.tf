@@ -33,7 +33,7 @@
 # }
 
 # resource "aws_instance" "public_ec2" {
-#   ami                         = local.ami
+#   ami                         = local.amz_linux_2023_ami
 #   instance_type               = "t2.small"
 #   subnet_id                   = local.subnet_id
 #   associate_public_ip_address = true
@@ -41,7 +41,7 @@
 #   key_name                    = aws_key_pair.my_key.key_name
 
 #   tags = {
-#     Name = "nam-documentdb-baston"
+#     Name = "nam-documentdb-bastion"
 #   }
 # }
 

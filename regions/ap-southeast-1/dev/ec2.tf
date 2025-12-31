@@ -154,7 +154,7 @@
 
 # # Public EC2 instance
 # resource "aws_instance" "public_ec2" {
-#   ami                         = local.ami
+#   ami                         = local.amz_linux_2023_ami
 #   instance_type               = "t2.small"
 #   subnet_id                   = aws_subnet.public.id
 #   associate_public_ip_address = true
@@ -196,7 +196,7 @@
 
 # # Private EC2 instance
 # resource "aws_instance" "private_ec2" {
-#   ami                         = local.ami
+#   ami                         = local.amz_linux_2023_ami
 #   instance_type               = "t2.small"
 #   subnet_id                   = aws_subnet.private.id
 #   vpc_security_group_ids      = [aws_security_group.private_sg.id]

@@ -1,0 +1,16 @@
+networks:
+  app_network:
+    driver: bridge
+
+services:
+  vpn:
+    image: nam-infra/strongswan:latest
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_MODULE
+    stdin_open: true
+    tty: true
+    networks:
+      - app_network
+
