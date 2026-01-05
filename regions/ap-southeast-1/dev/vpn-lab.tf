@@ -75,3 +75,16 @@ resource "aws_instance" "vpn" {
   }
 }
 
+resource "aws_eip" "vpn" {
+  domain = "vpc"
+
+  tags = {
+    Name = "${local.prefix}-vpn-ec2-eip"
+  }
+}
+
+resource "aws_eip_association" "vpn_eip_association" {
+  instance_id   = aws_instance.vpn.id
+  allocation_id = aws_eip.vpn.id
+}
+
