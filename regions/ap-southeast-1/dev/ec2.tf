@@ -59,7 +59,7 @@
 # }
 
 # # Private subnet
-# resource "aws_subnet" "public" {
+# resource "aws_subnet" "private" {
 #   vpc_id                  = aws_vpc.main.id
 #   cidr_block              = "172.17.2.0/24"
 #   availability_zone       = "ap-southeast-1a"
